@@ -128,9 +128,12 @@ def download():
             'success': False
         }), 400
 
-@app.route('/file/<download_id>')
-def get_file(download_id):
-    """Télécharge le fichier via son ID"""
+@app.route('/file/<path:filename>')
+def get_file(filename):
+    """Télécharge le fichier via son ID (avec ou sans extension)"""
+    # Retirer l'extension .mp3 si présente
+    download_id = filename.replace('.mp3', '').replace('.m4a', '').replace('.webm', '')
+    
     if download_id not in downloads:
         return jsonify({'error': 'File not found or expired'}), 404
     
