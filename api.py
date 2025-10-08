@@ -52,14 +52,9 @@ def download():
         download_id = str(uuid.uuid4())[:8]
         output_path = f'/tmp/audio_{download_id}'
         
-        # Configuration yt-dlp
+        # Configuration yt-dlp (sans conversion MP3 pour éviter FFmpeg)
         ydl_opts = {
             'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
             'outtmpl': output_path + '.%(ext)s',
             'quiet': True,
             'no_warnings': True,
@@ -70,19 +65,17 @@ def download():
             info = ydl.extract_info(url, download=True)
             title = info.get('title', 'audio')
         
-        # Trouver le fichier MP3 généré
-        mp3_file = f'{output_path}.mp3'
+        # Trouver le fichier audio généré (n'importe quelle extension)
+        audio_files = glob.glob(f'{output_path}.*')
         
-        if not os.path.exists(mp3_file):
-            files = glob.glob(f'{output_path}*.mp3')
-            if files:
-                mp3_file = files[0]
-            else:
-                return jsonify({'error': 'Fichier MP3 non généré'}), 500
+        if not audio_files:
+            return jsonify({'error': 'Fichier audio non généré'}), 500
+        
+        audio_file = audio_files[0]
         
         # Sauvegarder les infos du fichier
         downloads[download_id] = {
-            'path': mp3_file,
+            'path': audio_file,
             'title': title,
             'timestamp': time.time()
         }
@@ -115,11 +108,14 @@ def get_file(download_id):
     if not os.path.exists(file_data['path']):
         return jsonify({'error': 'File no longer available'}), 404
     
+    # Détecter l'extension du fichier
+    file_ext = os.path.splitext(file_data['path'])[1] or '.mp3'
+    
     return send_file(
         file_data['path'],
         mimetype='audio/mpeg',
         as_attachment=True,
-        download_name=f"{file_data['title']}.mp3"
+        download_name=f"{file_data['title']}{file_ext}"
     )
 
 if __name__ == '__main__':
