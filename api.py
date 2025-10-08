@@ -14,14 +14,14 @@ CORS(app)
 downloads = {}
 
 def cleanup_old_files():
-    """Nettoie les fichiers de plus de 10 minutes"""
+    """Nettoie les fichiers de plus de 7 jours"""
     while True:
-        time.sleep(300)  # Toutes les 5 minutes
+        time.sleep(3600)  # Toutes les heures
         current_time = time.time()
         to_delete = []
         
         for file_id, data in downloads.items():
-            if current_time - data['timestamp'] > 600:  # 10 minutes
+            if current_time - data['timestamp'] > 604800:  # 7 jours
                 try:
                     if os.path.exists(data['path']):
                         os.remove(data['path'])
@@ -52,6 +52,9 @@ def download():
         download_id = str(uuid.uuid4())[:8]
         output_path = f'/tmp/audio_{download_id}'
         
+        # Vérifier si FFmpeg est disponible
+        has_ffmpeg = os.path.exists('/usr/bin/ffmpeg') or os.system('which ffmpeg') == 0
+        
         # Configuration yt-dlp avec options anti-blocage
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -59,7 +62,7 @@ def download():
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
-            }] if os.path.exists('/usr/bin/ffmpeg') else [],
+            }] if has_ffmpeg else [],
             'outtmpl': output_path + '.%(ext)s',
             'quiet': True,
             'no_warnings': True,
@@ -74,31 +77,49 @@ def download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             title = info.get('title', 'audio')
+            duration = info.get('duration', 0)
         
-        # Trouver le fichier audio généré (n'importe quelle extension)
-        audio_files = glob.glob(f'{output_path}.*')
+        # Trouver le fichier audio généré
+        if has_ffmpeg:
+            audio_file = f'{output_path}.mp3'
+            if not os.path.exists(audio_file):
+                audio_files = glob.glob(f'{output_path}*.mp3')
+                if audio_files:
+                    audio_file = audio_files[0]
+                else:
+                    return jsonify({'error': 'Fichier MP3 non généré'}), 500
+        else:
+            audio_files = glob.glob(f'{output_path}.*')
+            if not audio_files:
+                return jsonify({'error': 'Fichier audio non généré'}), 500
+            audio_file = audio_files[0]
         
-        if not audio_files:
-            return jsonify({'error': 'Fichier audio non généré'}), 500
-        
-        audio_file = audio_files[0]
+        # Obtenir la taille du fichier
+        file_size = os.path.getsize(audio_file)
         
         # Sauvegarder les infos du fichier
         downloads[download_id] = {
             'path': audio_file,
             'title': title,
-            'timestamp': time.time()
+            'duration': duration,
+            'size': file_size,
+            'timestamp': time.time(),
+            'has_ffmpeg': has_ffmpeg
         }
         
         # Retourner l'URL de téléchargement
-        download_url = f'https://web-production-4bea.up.railway.app/file/{download_id}'
+        file_url = f'https://web-production-4bea.up.railway.app/file/{download_id}'
         
         return jsonify({
             'success': True,
-            'message': 'Audio ready to download',
+            'message': 'Audio ready',
             'title': title,
-            'download_url': download_url,
-            'download_id': download_id
+            'file_url': file_url,
+            'download_id': download_id,
+            'duration': duration,
+            'file_size': file_size,
+            'format': 'mp3' if has_ffmpeg else 'original',
+            'ffmpeg_installed': has_ffmpeg
         }), 200
         
     except Exception as e:
@@ -118,14 +139,17 @@ def get_file(download_id):
     if not os.path.exists(file_data['path']):
         return jsonify({'error': 'File no longer available'}), 404
     
-    # Détecter l'extension du fichier
+    # Déterminer l'extension et le mime type
     file_ext = os.path.splitext(file_data['path'])[1] or '.mp3'
+    
+    # Nettoyer le titre pour le nom de fichier
+    safe_title = "".join(c for c in file_data['title'] if c.isalnum() or c in (' ', '-', '_')).strip()
+    safe_title = safe_title[:100]  # Limiter la longueur
     
     return send_file(
         file_data['path'],
         mimetype='audio/mpeg',
-        as_attachment=True,
-        download_name=f"{file_data['title']}{file_ext}"
+        as_attachment=False  # False = streamable, True = téléchargement forcé
     )
 
 if __name__ == '__main__':
