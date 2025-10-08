@@ -10,7 +10,6 @@ import time
 app = Flask(__name__)
 CORS(app)
 
-# Stocker les téléchargements et leur statut
 downloads = {}
 
 def cleanup_old_files():
@@ -34,12 +33,23 @@ def cleanup_old_files():
 
 Thread(target=cleanup_old_files, daemon=True).start()
 
-def download_audio_background(url, download_id):
-    """Télécharge l'audio en arrière-plan"""
+@app.route('/')
+def home():
+    return jsonify({'message': 'API de téléchargement audio active ✅'})
+
+@app.route('/download', methods=['POST'])
+def download():
+    """Télécharge l'audio et retourne le lien directement"""
     try:
-        downloads[download_id]['status'] = 'downloading'
+        data = request.get_json(force=True)
+        url = data.get('url')
         
+        if not url:
+            return jsonify({'error': 'URL manquante'}), 400
+        
+        download_id = str(uuid.uuid4())[:8]
         output_path = f'/tmp/audio_{download_id}'
+        
         has_ffmpeg = os.path.exists('/usr/bin/ffmpeg') or os.system('which ffmpeg') == 0
         
         ydl_opts = {
@@ -83,62 +93,33 @@ def download_audio_background(url, download_id):
                 if audio_files:
                     audio_file = audio_files[0]
                 else:
-                    downloads[download_id]['status'] = 'error'
-                    downloads[download_id]['error'] = 'MP3 file not generated'
-                    return
+                    return jsonify({'error': 'Fichier MP3 non généré'}), 500
         else:
             audio_files = glob.glob(f'{output_path}.*')
             if not audio_files:
-                downloads[download_id]['status'] = 'error'
-                downloads[download_id]['error'] = 'Audio file not generated'
-                return
+                return jsonify({'error': 'Fichier audio non généré'}), 500
             audio_file = audio_files[0]
         
         file_size = os.path.getsize(audio_file)
         
-        downloads[download_id].update({
-            'status': 'completed',
+        downloads[download_id] = {
             'path': audio_file,
             'title': title,
             'duration': duration,
             'size': file_size,
             'timestamp': time.time()
-        })
-        
-    except Exception as e:
-        downloads[download_id]['status'] = 'error'
-        downloads[download_id]['error'] = str(e)
-
-@app.route('/')
-def home():
-    return jsonify({'message': 'API de téléchargement audio active ✅'})
-
-@app.route('/download', methods=['POST'])
-def download():
-    """Démarre un téléchargement en arrière-plan"""
-    try:
-        data = request.get_json(force=True)
-        url = data.get('url')
-        
-        if not url:
-            return jsonify({'error': 'URL manquante'}), 400
-        
-        download_id = str(uuid.uuid4())[:8]
-        
-        downloads[download_id] = {
-            'status': 'starting',
-            'url': url,
-            'timestamp': time.time()
         }
         
-        thread = Thread(target=download_audio_background, args=(url, download_id))
-        thread.start()
+        file_url = f'https://web-production-4bea.up.railway.app/file/{download_id}.mp3'
         
         return jsonify({
             'success': True,
+            'message': 'Audio ready',
+            'title': title,
+            'file_url': file_url,
             'download_id': download_id,
-            'message': 'Download started',
-            'status_url': f'https://web-production-4bea.up.railway.app/status/{download_id}'
+            'duration': duration,
+            'file_size': file_size
         }), 200
         
     except Exception as e:
@@ -146,22 +127,6 @@ def download():
             'error': f'Erreur: {str(e)}',
             'success': False
         }), 400
-
-@app.route('/status/<download_id>')
-def get_status(download_id):
-    """Vérifier le statut d'un téléchargement"""
-    if download_id not in downloads:
-        return jsonify({'error': 'Download not found'}), 404
-    
-    status_data = downloads[download_id].copy()
-    
-    if 'path' in status_data:
-        status_data.pop('path')
-    
-    if status_data['status'] == 'completed':
-        status_data['file_url'] = f'https://web-production-4bea.up.railway.app/file/{download_id}.mp3'
-    
-    return jsonify(status_data)
 
 @app.route('/file/<path:filename>')
 def get_file(filename):
@@ -172,9 +137,6 @@ def get_file(filename):
         return jsonify({'error': 'File not found'}), 404
     
     file_data = downloads[download_id]
-    
-    if file_data['status'] != 'completed':
-        return jsonify({'error': 'File not ready yet', 'status': file_data['status']}), 400
     
     if not os.path.exists(file_data['path']):
         return jsonify({'error': 'File no longer available'}), 404
@@ -187,14 +149,11 @@ def get_file(filename):
 
 @app.route('/file-base64/<download_id>', methods=['GET'])
 def get_file_base64(download_id):
-    """Retourne le fichier en base64"""
+    """Retourne le fichier en base64 pour Bubble"""
     if download_id not in downloads:
         return jsonify({'error': 'File not found'}), 404
     
     file_data = downloads[download_id]
-    
-    if file_data['status'] != 'completed':
-        return jsonify({'error': 'File not ready yet', 'status': file_data['status']}), 400
     
     if not os.path.exists(file_data['path']):
         return jsonify({'error': 'File no longer available'}), 404
