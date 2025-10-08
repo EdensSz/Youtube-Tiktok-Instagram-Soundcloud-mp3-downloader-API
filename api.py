@@ -107,8 +107,8 @@ def download():
             'has_ffmpeg': has_ffmpeg
         }
         
-        # Retourner l'URL de téléchargement
-        file_url = f'https://web-production-4bea.up.railway.app/file/{download_id}'
+        # Retourner l'URL de téléchargement avec extension .mp3
+        file_url = f'https://web-production-4bea.up.railway.app/file/{download_id}.mp3'
         
         return jsonify({
             'success': True,
