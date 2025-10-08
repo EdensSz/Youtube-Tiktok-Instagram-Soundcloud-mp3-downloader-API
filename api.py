@@ -52,12 +52,22 @@ def download():
         download_id = str(uuid.uuid4())[:8]
         output_path = f'/tmp/audio_{download_id}'
         
-        # Configuration yt-dlp (sans conversion MP3 pour éviter FFmpeg)
+        # Configuration yt-dlp avec options anti-blocage
         ydl_opts = {
             'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }] if os.path.exists('/usr/bin/ffmpeg') else [],
             'outtmpl': output_path + '.%(ext)s',
             'quiet': True,
             'no_warnings': True,
+            # Options anti-blocage YouTube
+            'nocheckcertificate': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'referer': 'https://www.youtube.com/',
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         }
         
         # Télécharger la vidéo et extraire l'audio
