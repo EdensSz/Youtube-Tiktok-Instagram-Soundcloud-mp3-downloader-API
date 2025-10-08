@@ -1,80 +1,34 @@
-"""
-api.py - API Flask ultra-simple pour télécharger l'audio
-"""
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import yt_dlp
-import os
+import subprocess
+import sys
 
-app = Flask(__name__)
-CORS(app)  # Permet les requêtes depuis n'importe quel domaine
-
-# Stockage de la progression
-progress_data = {}
-
-def progress_hook(d, task_id):
-    """Capture la progression"""
-    if d['status'] == 'downloading':
-        if 'total_bytes' in d:
-            percent = (d['downloaded_bytes'] / d['total_bytes']) * 100
-            progress_data[task_id] = {'progress': round(percent, 1), 'status': 'downloading'}
-    elif d['status'] == 'finished':
-        progress_data[task_id] = {'progress': 100, 'status': 'finished'}
-
-@app.route('/')
-def home():
-    return jsonify({'message': 'API de téléchargement audio active'})
-
-@app.route('/download', methods=['POST'])
-def download():
-    """Endpoint principal pour télécharger l'audio"""
+def telecharger_audio(url):
+    """
+    Télécharge l'audio d'une vidéo YouTube, TikTok ou Instagram
+    """
     try:
-        data = request.get_json()
-        url = data.get('url')
+        # Commande yt-dlp pour extraire uniquement l'audio
+        commande = [
+            'yt-dlp',
+            '-x',  # Extraire l'audio
+            '--audio-format', 'mp3',  # Format MP3
+            '--audio-quality', '0',  # Meilleure qualité
+            '-o', '%(title)s.%(ext)s',  # Nom du fichier
+            url
+        ]
         
-        if not url:
-            return jsonify({'error': 'URL manquante'}), 400
+        print(f"Téléchargement en cours de : {url}")
+        subprocess.run(commande, check=True)
+        print("✓ Téléchargement terminé !")
         
-        # Vérifier si l'URL est valide
-        task_id = str(hash(url))
-        progress_data[task_id] = {'progress': 0, 'status': 'starting'}
-        
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'outtmpl': f'/tmp/audio_{task_id}.%(ext)s',
-            'progress_hooks': [lambda d: progress_hook(d, task_id)],
-            'quiet': True,
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            title = info.get('title', 'audio')
-            
-        return jsonify({
-            'success': True,
-            'message': 'Téléchargement terminé',
-            'title': title,
-            'task_id': task_id
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': f'Erreur: {str(e)}',
-            'success': False
-        }), 400
+    except subprocess.CalledProcessError:
+        print("✗ Erreur lors du téléchargement")
+    except FileNotFoundError:
+        print("✗ yt-dlp n'est pas installé. Installez-le avec: pip install yt-dlp")
 
-@app.route('/progress/<task_id>')
-def get_progress(task_id):
-    """Obtenir la progression d'un téléchargement"""
-    if task_id in progress_data:
-        return jsonify(progress_data[task_id])
-    return jsonify({'progress': 0, 'status': 'not_found'}), 404
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        url = sys.argv[1]
+    else:
+        url = input("Entrez l'URL de la vidéo : ")
+    
+    telecharger_audio(url)
