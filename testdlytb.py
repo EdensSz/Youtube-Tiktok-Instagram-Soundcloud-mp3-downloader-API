@@ -1,34 +1,53 @@
-import subprocess
-import sys
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import yt_dlp
+import os
 
-def telecharger_audio(url):
-    """
-    Télécharge l'audio d'une vidéo YouTube, TikTok ou Instagram
-    """
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/')
+def home():
+    return jsonify({'message': 'API de téléchargement audio active ✅'})
+
+@app.route('/download', methods=['POST'])
+def download():
     try:
-        # Commande yt-dlp pour extraire uniquement l'audio
-        commande = [
-            'yt-dlp',
-            '-x',  # Extraire l'audio
-            '--audio-format', 'mp3',  # Format MP3
-            '--audio-quality', '0',  # Meilleure qualité
-            '-o', '%(title)s.%(ext)s',  # Nom du fichier
-            url
-        ]
+        data = request.get_json()
+        url = data.get('url')
         
-        print(f"Téléchargement en cours de : {url}")
-        subprocess.run(commande, check=True)
-        print("✓ Téléchargement terminé !")
+        if not url:
+            return jsonify({'error': 'URL manquante'}), 400
         
-    except subprocess.CalledProcessError:
-        print("✗ Erreur lors du téléchargement")
-    except FileNotFoundError:
-        print("✗ yt-dlp n'est pas installé. Installez-le avec: pip install yt-dlp")
+        # Configuration yt-dlp
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'outtmpl': '/tmp/audio.%(ext)s',
+            'quiet': True,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get('title', 'audio')
+            
+        return jsonify({
+            'success': True,
+            'message': 'Téléchargement terminé',
+            'title': title
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'Erreur: {str(e)}',
+            'success': False
+        }), 400
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        url = sys.argv[1]
-    else:
-        url = input("Entrez l'URL de la vidéo : ")
-    
-    telecharger_audio(url)
+if __name__ == '__main__':
+    # Railway fournit automatiquement la variable PORT
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
