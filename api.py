@@ -1,4 +1,33 @@
-from flask import Flask, request, jsonify, send_file
+# Obtenir la taille du fichier
+        file_size = os.path.getsize(audio_file)
+        
+        # Envoyer le fichier à Bubble via le Backend Workflow
+        try:
+            with open(audio_file, 'rb') as f:
+                files = {
+                    'audio_file': (f'{title}.mp3', f, 'audio/mpeg')
+                }
+                data = {
+                    'title': title,
+                    'duration': duration
+                }
+                
+                bubble_response = requests.post(
+                    BUBBLE_WORKFLOW_URL,
+                    files=files,
+                    data=data,
+                    timeout=60
+                )
+                
+                if bubble_response.status_code != 200:
+                    return jsonify({
+                        'error': f'Erreur lors de l\'upload vers Bubble: {bubble_response.text}',
+                        'success': False
+                    }), 500
+        
+        except Exception as upload_error:
+            return jsonify({
+                'error': f'Erreur upload Bubble: {str(upload_errorfrom flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
 import os
@@ -6,9 +35,13 @@ import uuid
 import glob
 from threading import Thread
 import time
+import requests
 
 app = Flask(__name__)
 CORS(app)
+
+# URL du Backend Workflow Bubble - CHANGE ÇA !
+BUBBLE_WORKFLOW_URL = "https://TON_APP.bubbleapps.io/version-test/api/1.1/wf/receive_audio"
 
 # Stocker les fichiers téléchargés temporairement
 downloads = {}
@@ -55,7 +88,7 @@ def download():
         # Vérifier si FFmpeg est disponible
         has_ffmpeg = os.path.exists('/usr/bin/ffmpeg') or os.system('which ffmpeg') == 0
         
-        # Configuration yt-dlp avec options anti-blocage
+        # Configuration yt-dlp avec options anti-blocage RENFORCÉES
         ydl_opts = {
             'format': 'bestaudio/best',
             'postprocessors': [{
@@ -66,11 +99,24 @@ def download():
             'outtmpl': output_path + '.%(ext)s',
             'quiet': True,
             'no_warnings': True,
-            # Options anti-blocage YouTube
+            # Options anti-blocage YouTube RENFORCÉES
             'nocheckcertificate': True,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'geo_bypass': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'referer': 'https://www.youtube.com/',
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web', 'ios'],
+                    'player_skip': ['webpage', 'configs'],
+                    'skip': ['dash', 'hls']
+                }
+            },
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            }
         }
         
         # Télécharger la vidéo et extraire l'audio
